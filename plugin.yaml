@@ -1,0 +1,31 @@
+name: bumblebee-guard
+version: "0.1.0"
+description: "Supply-chain guard: runs the local Bumblebee scanner, injects active known-malicious-package findings into agent context, and tracks advisories."
+author: "Neo (kahnanX), Hermes Agent"
+license: MIT
+requires_hermes: ">=0.21.6"
+provides_tools:
+  - bumblebee_guard_scan
+  - bumblebee_guard_status
+  - bumblebee_guard_diff
+provides_hooks:
+  - pre_llm_call
+provides_commands:
+  - bumblebee
+config_schema:
+  bridge_dir:
+    type: str
+    default: "~/.local/share/hermes-bumblebee-bridge"
+    description: "Directory of the installed Bumblebee bridge (bin/bumblebee + daily_scan.sh)."
+  scan_timeout_s:
+    type: int
+    default: 240
+    description: "Max seconds for a full scan before it is reported as timed out."
+  inject_status:
+    type: bool
+    default: true
+    description: "Inject a one-line context note via pre_llm_call when findings exist (rate-limited to once per hour, never when clean)."
+  osv_enabled:
+    type: bool
+    default: true
+    description: "Include OSV.dev advisory counts from the bridge's OSV layer when reporting."
