@@ -46,7 +46,14 @@ def run_scan(config: dict) -> dict:
         proc = subprocess.run(
             ["bash", str(script)],
             capture_output=True, text=True, timeout=timeout,
-            env={**os.environ, "INSTALL_DIR": str(b)},
+            # Minimal environment (upstream review 2026-11-05): never leak provider
+            # keys or any other agent secrets to the external scanner script.
+            env={
+                "PATH": os.environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin",
+                "HOME": os.environ.get("HOME") or str(Path.home()),
+                "LANG": os.environ.get("LANG") or "C.UTF-8",
+                "INSTALL_DIR": str(b),
+            },
         )
         duration_ms = int((time.monotonic() - t0) * 1000)
     except subprocess.TimeoutExpired:

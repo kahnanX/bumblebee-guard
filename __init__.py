@@ -38,8 +38,11 @@ def _summary_line(summary: dict) -> str | None:
 def _pre_llm_call(session_id=None, user_message=None, **kwargs):
     """Rate-limited context injection: only when curated findings exist."""
     try:
-        config = {}
-        summary = core.read_summary(config)
+        # inject_status is honored: settings are captured at register() time
+        # (handlers/hooks never receive ctx at call time — upstream review point 3).
+        if not tools.config().get("inject_status", True):
+            return None
+        summary = core.read_summary({})
         if summary is None:
             return None
         line = _summary_line(summary)
@@ -72,6 +75,9 @@ def _handle_slash(ctx, raw_args: str) -> str:
 
 
 def register(ctx):
+    # Settings must be read here with explicit keys: tool handlers and hooks never
+    # receive ctx at call time (upstream review 2026-11-05, point 3).
+    tools.capture_settings(ctx)
     for schema in schemas.ALL_SCHEMAS:
         handler = getattr(tools, schema["name"])
         ctx.register_tool(name=schema["name"], toolset="bumblebee-guard",
@@ -85,6 +91,9 @@ def register(ctx):
 
         skill_md = Path(__file__).parent / "skills" / "triage" / "SKILL.md"
         if skill_md.exists():
-            ctx.register_skill("triage", skill_md.read_text())
+            ctx.register_skill("triage", skill_md,
+                               description="Triage guidance for supply-chain findings: "
+                                           "confidence classes, OSV alias dedup, documented "
+                                           "false-positive pattern")
     except Exception:
         logger.debug("bumblebee-guard skill registration skipped", exc_info=True)

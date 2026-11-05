@@ -31,6 +31,8 @@ def clean_dirs(tmp_path, monkeypatch):
     monkeypatch.setenv("BUMBLEBEE_GUARD_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("BUMBLEBEE_STATE_DIR", str(tmp_path / "state"))
     (tmp_path / "state").mkdir(parents=True)
+    tools.SETTINGS.clear()
+    tools.capture_settings(FakeCtx())  # reset captured settings to defaults
     yield
 
 
@@ -61,8 +63,8 @@ class FakeCtx:
     def __init__(self, config=None):
         self._config = config or {}
 
-    def get_config(self):
-        return self._config
+    def get_config(self, key, default=None):
+        return self._config.get(key, default)
 
 
 def test_inject_suppressed_when_clean(tmp_path):
@@ -139,13 +141,51 @@ def test_scan_success(tmp_path, monkeypatch):
 
 def test_scan_timeout(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "bridge_installed", lambda cfg: True)
+    tools.capture_settings(FakeCtx({"scan_timeout_s": 1}))
 
     def boom(*a, **k):
         raise subprocess.TimeoutExpired(cmd="scan", timeout=1)
 
     monkeypatch.setattr(core.subprocess, "run", boom)
-    out = json.loads(tools.bumblebee_guard_scan({}, ctx=FakeCtx({"scan_timeout_s": 1})))
+    out = json.loads(tools.bumblebee_guard_scan({}, ctx=FakeCtx()))
     assert out["ok"] is False and out["error"] == "scan timed out"
+
+
+def test_capture_settings_reads_explicit_keys():
+    tools.capture_settings(FakeCtx({"scan_timeout_s": 42, "inject_status": False,
+                                    "osv_enabled": False}))
+    assert tools.SETTINGS["scan_timeout_s"] == 42
+    assert tools.SETTINGS["inject_status"] is False
+    assert tools.SETTINGS["osv_enabled"] is False
+    tools.capture_settings(FakeCtx())
+    assert tools.SETTINGS["scan_timeout_s"] == 240
+    assert tools.SETTINGS["inject_status"] is True
+
+
+def test_inject_status_setting_disables_hook(tmp_path):
+    write_summary(tmp_path)
+    tools.capture_settings(FakeCtx({"inject_status": False}))
+    assert bg._pre_llm_call(session_id="s1") is None
+    tools.capture_settings(FakeCtx())
+
+
+def test_scan_env_is_minimal(tmp_path, monkeypatch):
+    """The scanner subprocess must never inherit provider keys (review point 1)."""
+    write_summary(tmp_path)
+    monkeypatch.setattr(core, "bridge_installed", lambda cfg: True)
+    captured = {}
+
+    def fake_run(*a, **k):
+        captured["env"] = k.get("env")
+        return subprocess.CompletedProcess(0, 0, "", "")
+
+    monkeypatch.setattr(core.subprocess, "run", fake_run)
+    out = json.loads(tools.bumblebee_guard_scan({}, ctx=FakeCtx()))
+    assert out["ok"] is True
+    env = captured["env"]
+    assert set(env) == {"PATH", "HOME", "LANG", "INSTALL_DIR"}
+    assert not any("TOKEN" in k.upper() or "KEY" in k.upper() or "SECRET" in k.upper()
+                   for k in env)
 
 
 def test_manifest_matches_registrations():

@@ -1,5 +1,5 @@
 name: bumblebee-guard
-version: "0.1.0"
+version: "0.1.1"
 description: "Supply-chain guard: runs the local Bumblebee scanner, injects active known-malicious-package findings into agent context, and tracks advisories."
 author: "Neo (kahnanX), Hermes Agent"
 license: MIT

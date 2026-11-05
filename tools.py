@@ -4,17 +4,35 @@ import json
 
 from . import core
 
+# Plugin settings are captured ONCE at register() time via ctx.get_config(key, default).
+# Tool handlers and the pre_llm_call hook never receive ctx at call time, so per-call
+# ctx.get_config() lookups silently no-op (upstream review 2026-11-05, point 3).
+SETTINGS: dict = {}
+_DEFAULTS = {
+    "bridge_dir": "~/.local/share/hermes-bumblebee-bridge",
+    "scan_timeout_s": 240,
+    "osv_enabled": True,
+    "inject_status": True,
+}
 
-def _get_ctx_config(ctx):
-    try:
-        return ctx.get_config() or {}
-    except Exception:
-        return {}
+
+def capture_settings(ctx) -> dict:
+    """Read each settings key explicitly with ctx.get_config(key, default)."""
+    for key, default in _DEFAULTS.items():
+        try:
+            SETTINGS[key] = ctx.get_config(key, default)
+        except Exception:
+            SETTINGS[key] = default
+    return dict(SETTINGS)
+
+
+def config() -> dict:
+    """Effective settings for core.* calls."""
+    return {k: SETTINGS.get(k, d) for k, d in _DEFAULTS.items()}
 
 
 def bumblebee_guard_scan(args: dict, ctx=None, **kwargs) -> str:
-    config = _get_ctx_config(ctx)
-    result = core.run_scan(config)
+    result = core.run_scan(config())
     data_dir = core.plugin_data_dir_guard()
     if result.get("ok"):
         summary = result["summary"]
@@ -25,11 +43,11 @@ def bumblebee_guard_scan(args: dict, ctx=None, **kwargs) -> str:
 
 
 def bumblebee_guard_status(args: dict, ctx=None, **kwargs) -> str:
-    config = _get_ctx_config(ctx)
-    summary = core.read_summary(config)
+    cfg = config()
+    summary = core.read_summary(cfg)
     if summary is None:
         return json.dumps({"ok": False, "error": "no scan summary found — run bumblebee_guard_scan first",
-                           "bridge_installed": core.bridge_installed(config)})
+                           "bridge_installed": core.bridge_installed(cfg)})
     out = {
         "ok": True,
         "scanner_version": summary.get("scanner_version"),
@@ -42,9 +60,9 @@ def bumblebee_guard_status(args: dict, ctx=None, **kwargs) -> str:
         "findings_total": summary.get("findings_total"),
         "findings_preview": summary.get("findings_preview", []),
         "findings_new_since_last": summary.get("findings_new_since_last"),
-        "catalogs": core.catalog_stats(config),
+        "catalogs": core.catalog_stats(cfg),
     }
-    if config.get("osv_enabled", True) and "osv_findings_total" in summary:
+    if cfg.get("osv_enabled", True) and "osv_findings_total" in summary:
         out["osv_findings_total"] = summary.get("osv_findings_total")
         if args.get("include_osv_preview"):
             out["osv_preview"] = summary.get("osv_preview", [])[:5]
@@ -52,10 +70,9 @@ def bumblebee_guard_status(args: dict, ctx=None, **kwargs) -> str:
 
 
 def bumblebee_guard_diff(args: dict, ctx=None, **kwargs) -> str:
-    config = _get_ctx_config(ctx)
     data_dir = core.plugin_data_dir_guard()
     action = args.get("action", "show")
-    summary = core.read_summary(config)
+    summary = core.read_summary(config())
     if summary is None:
         return json.dumps({"ok": False, "error": "no scan summary found — run bumblebee_guard_scan first"})
     baseline_path = data_dir / core.BASELINE_FILE

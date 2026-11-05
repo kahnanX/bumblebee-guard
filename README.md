@@ -32,8 +32,11 @@ OSV layer matches installed versions against OSV.dev advisories.
 ## Requirements
 
 - Hermes Agent >= 0.21.6
-- The Bumblebee bridge deployed at `~/.local/share/hermes-bumblebee-bridge/`
-  (from the upstream `hermes-bumblebee-bridge` install). Without it, tools
+- The Bumblebee bridge deployed at `~/.local/share/hermes-bumblebee-bridge/` —
+  installed from
+  [Deconstruct2021/hermes-bumblebee-bridge](https://github.com/Deconstruct2021/hermes-bumblebee-bridge)
+  (maintained by @Deconstruct2021; this plugin is tested against commit
+  `d89dd95`, bridge v0.1.0). Without it, tools
   report `bridge not deployed` cleanly — they never fail silently.
 - Python stdlib only. No credentials, no `requires_env`.
 
